@@ -56,13 +56,17 @@ export interface Job {
 export interface ScoredJob {
   url: string;
   title: string;
+  salary: string | null;
   location: string | null;
   site: string | null;
   fit_score: number | null;
   score_reasoning: string | null;
+  full_description: string | null;
   application_url: string | null;
   tailored_resume_path: string | null;
   cover_letter_path: string | null;
+  discovered_at: string | null;
+  scored_at: string | null;
   applied_at: string | null;
   apply_status: string | null;
   apply_error: string | null;

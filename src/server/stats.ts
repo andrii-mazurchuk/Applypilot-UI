@@ -99,13 +99,17 @@ export function getStats(instance: InstanceConfig): InstanceStats {
 export interface ScoredJob {
   url: string;
   title: string;
+  salary: string | null;
   location: string | null;
   site: string | null;
   fit_score: number | null;
   score_reasoning: string | null;
+  full_description: string | null;
   application_url: string | null;
   tailored_resume_path: string | null;
   cover_letter_path: string | null;
+  discovered_at: string | null;
+  scored_at: string | null;
   applied_at: string | null;
   apply_status: string | null;
   apply_error: string | null;
@@ -124,13 +128,47 @@ export function getScoredJobs(instance: InstanceConfig): ScoredJob[] {
   const db = new Database(dbPath, { readonly: true });
   try {
     return db.query<ScoredJob, []>(`
-      SELECT url, title, location, site, fit_score, score_reasoning,
-             application_url, tailored_resume_path, cover_letter_path,
-             applied_at, apply_status, apply_error
+      SELECT url, title, salary, location, site, fit_score, score_reasoning,
+             full_description, application_url, tailored_resume_path, cover_letter_path,
+             discovered_at, scored_at, applied_at, apply_status, apply_error
       FROM jobs
       WHERE fit_score IS NOT NULL
       ORDER BY fit_score DESC, title
     `).all();
+  } finally {
+    db.close();
+  }
+}
+
+export function getJob(instance: InstanceConfig, url: string): ScoredJob | null {
+  const dbPath = join(instance.dir, "applypilot.db");
+  if (!existsSync(dbPath)) return null;
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    return db.query<ScoredJob, [string]>(`
+      SELECT url, title, salary, location, site, fit_score, score_reasoning,
+             full_description, application_url, tailored_resume_path, cover_letter_path,
+             discovered_at, scored_at, applied_at, apply_status, apply_error
+      FROM jobs WHERE url = ?
+    `).get(url) ?? null;
+  } finally {
+    db.close();
+  }
+}
+
+export function updateJobStatus(
+  instance: InstanceConfig,
+  url: string,
+  status: string | null,
+  appliedAt: string | null,
+): void {
+  const dbPath = join(instance.dir, "applypilot.db");
+  const db = new Database(dbPath);
+  try {
+    db.run(
+      `UPDATE jobs SET apply_status = ?, applied_at = ? WHERE url = ?`,
+      [status, appliedAt, url],
+    );
   } finally {
     db.close();
   }

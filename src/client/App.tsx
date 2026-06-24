@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import type { InstanceData, RunMode } from "./types.js";
 import InstanceCard from "./components/InstanceCard.js";
 import InstanceDetail from "./components/InstanceDetail.js";
+import JobDetail from "./components/JobDetail.js";
 import LogViewer from "./components/LogViewer.js";
 
 type Panel = { type: "logs"; data: InstanceData };
@@ -10,6 +11,7 @@ export default function App() {
   const [instances, setInstances] = useState<InstanceData[]>([]);
   const [totalApplied, setTotalApplied] = useState<number>(0);
   const [selectedInstance, setSelectedInstance] = useState<string | null>(null);
+  const [selectedJobUrl, setSelectedJobUrl] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -53,7 +55,23 @@ export default function App() {
     if (fresh) setPanel((p) => p ? { ...p, data: fresh } : null);
   }, [instances]);
 
-  // ── Detail page ─────────────────────────────────────────────────────────────
+  // ── Job detail page ──────────────────────────────────────────────────────────
+  if (selectedInstance && selectedJobUrl) {
+    const instanceData = instances.find((d) => d.instance.name === selectedInstance);
+    if (instanceData) {
+      return (
+        <JobDetail
+          instanceName={selectedInstance}
+          instanceLabel={instanceData.instance.label}
+          jobUrl={selectedJobUrl}
+          onBack={() => setSelectedJobUrl(null)}
+          onBackToInstances={() => { setSelectedJobUrl(null); setSelectedInstance(null); }}
+        />
+      );
+    }
+  }
+
+  // ── Instance detail page ─────────────────────────────────────────────────────
   if (selectedInstance) {
     const instanceData = instances.find((d) => d.instance.name === selectedInstance);
     if (instanceData) {
@@ -65,6 +83,7 @@ export default function App() {
             onStart={(mode) => handleStart(instanceData.instance.name, mode)}
             onStop={() => handleStop(instanceData.instance.name)}
             onViewLogs={() => setPanel({ type: "logs", data: instanceData })}
+            onJobSelect={(url) => setSelectedJobUrl(url)}
           />
           {panel?.type === "logs" && (
             <LogViewer data={panel.data} onClose={() => setPanel(null)} />

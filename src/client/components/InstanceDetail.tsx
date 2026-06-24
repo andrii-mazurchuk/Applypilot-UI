@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import type { InstanceData, InstanceStats, RunMode, ProcessStatus, ScoredJob, PdfFile } from "../types.js";
 
 interface Props {
@@ -7,6 +7,7 @@ interface Props {
   onStart: (mode: RunMode) => void;
   onStop: () => void;
   onViewLogs: () => void;
+  onJobSelect: (url: string) => void;
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -157,9 +158,7 @@ function statusBadge(status: string | null): { cls: string; label: string } {
   return { cls, label: status.replace(/_/g, " ") };
 }
 
-function JobsTable({ jobs, instanceName }: { jobs: ScoredJob[]; instanceName: string }) {
-  const [expanded, setExpanded] = useState<string | null>(null);
-
+function JobsTable({ jobs, instanceName, onJobSelect }: { jobs: ScoredJob[]; instanceName: string; onJobSelect: (url: string) => void }) {
   if (jobs.length === 0) {
     return <p className="text-zinc-500 text-sm p-6">No jobs match this filter.</p>;
   }
@@ -181,100 +180,55 @@ function JobsTable({ jobs, instanceName }: { jobs: ScoredJob[]; instanceName: st
         <tbody className="divide-y divide-zinc-800/60">
           {jobs.map((job) => {
             const { cls, label } = statusBadge(job.apply_status);
-            const isExpanded = expanded === job.url;
             return (
-              <React.Fragment key={job.url}>
-                <tr
-                  className="hover:bg-zinc-800/40 transition-colors cursor-pointer"
-                  onClick={() => setExpanded(isExpanded ? null : job.url)}
-                >
-                  <td className="px-5 py-3 text-zinc-200 max-w-xs">
-                    <span className="truncate block" title={job.title ?? ""}>{job.title ?? "—"}</span>
-                  </td>
-                  <td className="px-3 py-3">
-                    <span className="text-xs bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded">
-                      {job.site ?? "—"}
-                    </span>
-                  </td>
-                  <td className="px-3 py-3 text-center">
-                    <span className={`font-bold font-mono text-base ${scoreColor(job.fit_score)}`}>
-                      {job.fit_score ?? "—"}
-                    </span>
-                  </td>
-                  <td className="px-3 py-3 text-zinc-400 text-xs max-w-[140px] truncate">
-                    {job.location ?? "—"}
-                  </td>
-                  <td className="px-3 py-3">
-                    <span className={`px-2 py-0.5 rounded text-xs ${cls}`}>{label}</span>
-                  </td>
-                  <td className="px-3 py-3 text-center">
-                    <div className="flex items-center justify-center gap-2">
-                      {job.tailored_resume_path ? (
-                        <a
-                          href={resumePdfUrl(instanceName, job.tailored_resume_path)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-zinc-400 hover:text-white text-xs underline underline-offset-2"
-                          title="Resume PDF"
-                        >
-                          CV
-                        </a>
-                      ) : <span className="text-zinc-700 text-xs">—</span>}
-                      {job.cover_letter_path ? (
-                        <a
-                          href={coverPdfUrl(instanceName, job.cover_letter_path)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-zinc-400 hover:text-white text-xs underline underline-offset-2"
-                          title="Cover letter PDF"
-                        >
-                          CL
-                        </a>
-                      ) : <span className="text-zinc-700 text-xs">—</span>}
-                    </div>
-                  </td>
-                  <td className="px-3 py-3 text-center">
-                    {job.application_url ? (
-                      <a
-                        href={job.application_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-blue-400 hover:text-blue-300 text-xs"
-                        title={job.application_url}
-                      >
-                        ↗
-                      </a>
-                    ) : job.url ? (
-                      <a
-                        href={job.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-zinc-500 hover:text-zinc-300 text-xs"
-                        title={job.url}
-                      >
-                        ↗
-                      </a>
-                    ) : <span className="text-zinc-700">—</span>}
-                  </td>
-                </tr>
-                {isExpanded && job.score_reasoning && (
-                  <tr className="bg-zinc-800/30">
-                    <td colSpan={7} className="px-5 py-3 text-zinc-400 text-xs leading-relaxed">
-                      <span className="text-zinc-500 font-medium">Reasoning: </span>
-                      {job.score_reasoning}
-                      {job.apply_error && (
-                        <span className="block mt-1 text-red-400">
-                          <span className="font-medium">Apply error: </span>{job.apply_error}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                )}
-              </React.Fragment>
+              <tr
+                key={job.url}
+                className="hover:bg-zinc-800/40 transition-colors cursor-pointer group"
+                onClick={() => onJobSelect(job.url)}
+              >
+                <td className="px-5 py-3 text-zinc-200 max-w-xs">
+                  <span className="truncate block group-hover:text-white transition-colors" title={job.title ?? ""}>{job.title ?? "—"}</span>
+                </td>
+                <td className="px-3 py-3">
+                  <span className="text-xs bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded">
+                    {job.site ?? "—"}
+                  </span>
+                </td>
+                <td className="px-3 py-3 text-center">
+                  <span className={`font-bold font-mono text-base ${scoreColor(job.fit_score)}`}>
+                    {job.fit_score ?? "—"}
+                  </span>
+                </td>
+                <td className="px-3 py-3 text-zinc-400 text-xs max-w-[140px] truncate">
+                  {job.location ?? "—"}
+                </td>
+                <td className="px-3 py-3">
+                  <span className={`px-2 py-0.5 rounded text-xs ${cls}`}>{label}</span>
+                </td>
+                <td className="px-3 py-3 text-center">
+                  <div className="flex items-center justify-center gap-2">
+                    {job.tailored_resume_path
+                      ? <span className="text-emerald-500 text-xs">CV</span>
+                      : <span className="text-zinc-700 text-xs">—</span>}
+                    {job.cover_letter_path
+                      ? <span className="text-emerald-500 text-xs">CL</span>
+                      : <span className="text-zinc-700 text-xs">—</span>}
+                  </div>
+                </td>
+                <td className="px-3 py-3 text-center">
+                  {(job.application_url || job.url) ? (
+                    <a
+                      href={job.application_url ?? job.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-blue-400 hover:text-blue-300 text-xs"
+                    >
+                      ↗
+                    </a>
+                  ) : <span className="text-zinc-700">—</span>}
+                </td>
+              </tr>
             );
           })}
         </tbody>
@@ -374,7 +328,7 @@ const STATUS_DOT: Record<ProcessStatus, string> = {
 
 // ── main component ────────────────────────────────────────────────────────────
 
-export default function InstanceDetail({ data, onBack, onStart, onStop, onViewLogs }: Props) {
+export default function InstanceDetail({ data, onBack, onStart, onStop, onViewLogs, onJobSelect }: Props) {
   const { instance, stats, process: proc } = data;
   const isRunning = proc.status === "running";
 
@@ -579,7 +533,7 @@ export default function InstanceDetail({ data, onBack, onStart, onStop, onViewLo
             <p className="text-zinc-500 text-sm p-6">Loading jobs...</p>
           ) : (
             <div className="max-h-[600px] overflow-y-auto">
-              <JobsTable jobs={filteredJobs} instanceName={instance.name} />
+              <JobsTable jobs={filteredJobs} instanceName={instance.name} onJobSelect={onJobSelect} />
             </div>
           )}
         </div>

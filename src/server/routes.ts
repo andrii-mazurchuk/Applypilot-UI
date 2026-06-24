@@ -3,7 +3,7 @@ import { stream } from "hono/streaming";
 import { existsSync, readdirSync, statSync, createReadStream } from "fs";
 import { join } from "path";
 import { loadManifest } from "./manifest.js";
-import { getStats, getAppliedJobs, getCrossInstanceApplied, getScoredJobs, listPdfs } from "./stats.js";
+import { getStats, getAppliedJobs, getCrossInstanceApplied, getScoredJobs, getJob, updateJobStatus, listPdfs } from "./stats.js";
 import { startProcess, stopProcess, getStatus, subscribe, getLogs } from "./processes.js";
 import type { RunMode } from "./processes.js";
 
@@ -65,6 +65,33 @@ api.get("/instances/:name/scored-jobs", (c) => {
   const instance = instances.find((i) => i.name === name);
   if (!instance) return c.json({ error: "Instance not found" }, 404);
   return c.json(getScoredJobs(instance));
+});
+
+api.get("/instances/:name/scored-jobs/:url", (c) => {
+  const { name } = c.req.param();
+  const url = decodeURIComponent(c.req.param("url"));
+  const instances = loadManifest();
+  const instance = instances.find((i) => i.name === name);
+  if (!instance) return c.json({ error: "Instance not found" }, 404);
+  const job = getJob(instance, url);
+  if (!job) return c.json({ error: "Job not found" }, 404);
+  return c.json(job);
+});
+
+api.patch("/instances/:name/scored-jobs", async (c) => {
+  const { name } = c.req.param();
+  const instances = loadManifest();
+  const instance = instances.find((i) => i.name === name);
+  if (!instance) return c.json({ error: "Instance not found" }, 404);
+
+  const body = await c.req.json().catch(() => null);
+  if (!body?.url) return c.json({ error: "url required" }, 400);
+
+  const { url, apply_status } = body as { url: string; apply_status: string | null };
+  const appliedAt = apply_status === "applied" ? new Date().toISOString() : null;
+
+  updateJobStatus(instance, url, apply_status ?? null, appliedAt);
+  return c.json({ ok: true });
 });
 
 api.get("/instances/:name/pdfs", (c) => {
