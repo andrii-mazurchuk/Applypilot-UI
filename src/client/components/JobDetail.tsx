@@ -107,8 +107,8 @@ function MessageContent({
 // ── ChatPanel ─────────────────────────────────────────────────────────────────
 
 function ChatPanel({
-  instanceName, jobUrl,
-}: { instanceName: string; jobUrl: string }) {
+  instanceName, jobUrl, onPdfSaved,
+}: { instanceName: string; jobUrl: string; onPdfSaved: () => void }) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -194,7 +194,8 @@ function ChatPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jobUrl, content }),
       });
-      setSaveResult(res.ok ? "ok" : "error");
+      if (res.ok) { setSaveResult("ok"); onPdfSaved(); }
+      else setSaveResult("error");
     } catch {
       setSaveResult("error");
     } finally {
@@ -513,7 +514,7 @@ export default function JobDetail({ instanceName, instanceLabel, jobUrl, onBack,
               <span className="text-[10px] text-blue-400 font-medium">✦ AI</span>
             </div>
             <div className="flex-1 overflow-hidden flex flex-col">
-              <ChatPanel instanceName={instanceName} jobUrl={jobUrl} />
+              <ChatPanel instanceName={instanceName} jobUrl={jobUrl} onPdfSaved={() => setPdfBust(Date.now())} />
             </div>
           </div>
 

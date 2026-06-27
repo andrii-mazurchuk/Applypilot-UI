@@ -8,11 +8,11 @@ import type { ScoredJob } from "./stats.js";
 
 // ── API key ────────────────────────────────────────────────────────────────────
 
-function getGeminiKey(): string {
-  if (process.env.GEMINI_API_KEY) return process.env.GEMINI_API_KEY;
+function getChatOpenAIKey(): string {
+  if (process.env.CHAT_OPENAI_API_KEY) return process.env.CHAT_OPENAI_API_KEY;
   const envPath = join(homedir(), ".applypilot", ".env");
   if (existsSync(envPath)) {
-    const match = readFileSync(envPath, "utf-8").match(/^GEMINI_API_KEY\s*=\s*(.+)$/m);
+    const match = readFileSync(envPath, "utf-8").match(/^CHAT_OPENAI_API_KEY\s*=\s*(.+)$/m);
     if (match) return match[1].trim().replace(/^["']|["']$/g, "");
   }
   return "";
@@ -47,17 +47,23 @@ function buildSystemPrompt(job: ScoredJob, resumeText: string): string {
     resumeText,
     "",
     "## Your role",
-    "- Answer questions about job fit and resume gaps",
-    "- Suggest specific wording improvements with reasoning",
-    "- Rewrite any section on request",
-    "- When the user asks for a complete revised resume, output it EXACTLY like this:",
+    "You are an editor, not a consultant. When the user asks for any change — remove a section,",
+    "reword a bullet, add a skill, sharpen the summary — apply it immediately and output the",
+    "full revised resume using the tags below. Do not describe what you would do; just do it.",
+    "",
+    "Decision rule:",
+    "- User requests a change (remove, add, rewrite, fix, improve, tailor…) → output [REVISED RESUME] straight away.",
+    "- User asks a question (what's missing? how does this compare?) → answer briefly without a resume block.",
+    "- User intent is genuinely unclear → ask one short clarifying question, then act.",
+    "",
+    "When outputting a revised resume, use EXACTLY this format (no extra text inside the tags):",
     "",
     "[REVISED RESUME]",
-    "<full resume text here — preserve all sections and formatting>",
+    "<full resume text — preserve all sections and formatting not explicitly changed>",
     "[/REVISED RESUME]",
     "",
-    "Only use those tags when producing a full revised version. For partial suggestions, just write them inline.",
-    "Be concise and specific. Reference exact lines from the resume and job description.",
+    "After the closing tag, add one short sentence explaining what you changed and why.",
+    "Be concise. Reference specific lines from the resume and job description when relevant.",
   );
 
   return lines.join("\n");
@@ -84,28 +90,35 @@ export async function streamChatResponse(
     resumeText = readFileSync(job.tailored_resume_path, "utf-8");
   }
 
-  const apiKey = getGeminiKey();
-  if (!apiKey) throw new Error("GEMINI_API_KEY not set in ~/.applypilot/.env");
+  const apiKey = getChatOpenAIKey();
+  if (!apiKey) throw new Error("CHAT_OPENAI_API_KEY not set in ~/.applypilot/.env");
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: buildSystemPrompt(job, resumeText) }] },
-        contents: messages.map((m) => ({ role: m.role, parts: [{ text: m.content }] })),
-        generationConfig: { maxOutputTokens: 4096, temperature: 0.4 },
-      }),
+  const openAiMessages = [
+    { role: "system", content: buildSystemPrompt(job, resumeText) },
+    ...messages.map((m) => ({ role: m.role === "model" ? "assistant" : "user", content: m.content })),
+  ];
+
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
     },
-  );
+    body: JSON.stringify({
+      model: "gpt-4o",
+      messages: openAiMessages,
+      stream: true,
+      max_tokens: 4096,
+      temperature: 0.4,
+    }),
+  });
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`Gemini ${res.status}: ${body.slice(0, 300)}`);
+    throw new Error(`OpenAI ${res.status}: ${body.slice(0, 300)}`);
   }
 
-  if (!res.body) throw new Error("No response body from Gemini");
+  if (!res.body) throw new Error("No response body from OpenAI");
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -120,10 +133,10 @@ export async function streamChatResponse(
     for (const line of lines) {
       if (!line.startsWith("data: ")) continue;
       const jsonStr = line.slice(6).trim();
-      if (!jsonStr) continue;
+      if (!jsonStr || jsonStr === "[DONE]") continue;
       try {
         const chunk = JSON.parse(jsonStr);
-        const text: string | undefined = chunk?.candidates?.[0]?.content?.parts?.[0]?.text;
+        const text: string | undefined = chunk?.choices?.[0]?.delta?.content;
         if (text) onChunk(text);
       } catch {
         // skip malformed chunks
