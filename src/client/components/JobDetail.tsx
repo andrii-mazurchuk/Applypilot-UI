@@ -346,7 +346,7 @@ export default function JobDetail({ instanceName, instanceLabel, jobUrl, onBack,
   const hasDocs = !!(resumeUrl || coverUrl);
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col">
+    <div className="h-screen bg-zinc-950 text-zinc-100 flex flex-col overflow-hidden">
       {/* Breadcrumb header */}
       <header className="border-b border-zinc-800 px-6 py-4 flex items-center gap-2 flex-shrink-0">
         <button onClick={onBackToInstances} className="text-zinc-600 hover:text-zinc-300 text-sm transition-colors">Dashboard</button>
@@ -360,7 +360,7 @@ export default function JobDetail({ instanceName, instanceLabel, jobUrl, onBack,
       {!loading && !job && <div className="flex-1 flex items-center justify-center text-zinc-500 text-sm">Job not found.</div>}
 
       {!loading && job && (
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 overflow-hidden min-h-0">
 
           {/* ── Left: job info ───────────────────────────────────────────────── */}
           <div className="w-[400px] flex-shrink-0 overflow-y-auto border-r border-zinc-800">
@@ -461,7 +461,7 @@ export default function JobDetail({ instanceName, instanceLabel, jobUrl, onBack,
           </div>
 
           {/* ── Middle: PDF viewer ──────────────────────────────────────────── */}
-          <div className="flex-1 flex flex-col overflow-hidden border-r border-zinc-800">
+          <div className="flex-1 flex flex-col overflow-hidden min-h-0 border-r border-zinc-800">
             <div className="flex items-center gap-1 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/50 flex-shrink-0">
               {hasDocs && (
                 <>
