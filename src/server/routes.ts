@@ -4,6 +4,8 @@ import { existsSync, readdirSync, statSync, createReadStream } from "fs";
 import { join } from "path";
 import { loadManifest } from "./manifest.js";
 import { getStats, getAppliedJobs, getCrossInstanceApplied, getScoredJobs, getJob, updateJobStatus, listPdfs } from "./stats.js";
+import { streamChatResponse, saveResumeAndRegen } from "./chat.js";
+import type { ChatMessage } from "./chat.js";
 import { startProcess, stopProcess, getStatus, subscribe, getLogs } from "./processes.js";
 import type { RunMode } from "./processes.js";
 
@@ -127,6 +129,53 @@ api.get("/instances/:name/pdfs", (c) => {
 
   // List all PDFs
   return c.json(listPdfs(instance));
+});
+
+// Chat: stream a Gemini response with job + resume context
+api.post("/instances/:name/jobs/chat", async (c) => {
+  const { name } = c.req.param();
+  const body = await c.req.json().catch(() => null) as { jobUrl?: string; messages?: ChatMessage[] } | null;
+  if (!body?.jobUrl || !Array.isArray(body?.messages)) {
+    return c.json({ error: "jobUrl and messages required" }, 400);
+  }
+  const instances = loadManifest();
+  const instance = instances.find((i) => i.name === name);
+  if (!instance) return c.json({ error: "Instance not found" }, 404);
+
+  c.header("Content-Type", "text/event-stream");
+  c.header("Cache-Control", "no-cache");
+  c.header("Connection", "keep-alive");
+
+  return stream(c, async (s) => {
+    let closed = false;
+    s.onAbort(() => { closed = true; });
+    try {
+      await streamChatResponse(instance, body.jobUrl!, body.messages!, (chunk) => {
+        if (!closed) s.write(`data: ${JSON.stringify(chunk)}\n\n`).catch(() => { closed = true; });
+      });
+      if (!closed) await s.write(`data: [DONE]\n\n`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!closed) await s.write(`data: ${JSON.stringify({ error: msg })}\n\n`).catch(() => {});
+    }
+  });
+});
+
+// Save edited resume text and regenerate PDF
+api.post("/instances/:name/jobs/save-resume", async (c) => {
+  const { name } = c.req.param();
+  const body = await c.req.json().catch(() => null) as { jobUrl?: string; content?: string } | null;
+  if (!body?.jobUrl || !body?.content) return c.json({ error: "jobUrl and content required" }, 400);
+  const instances = loadManifest();
+  const instance = instances.find((i) => i.name === name);
+  if (!instance) return c.json({ error: "Instance not found" }, 404);
+  try {
+    await saveResumeAndRegen(instance, body.jobUrl, body.content);
+    return c.json({ ok: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ error: msg }, 500);
+  }
 });
 
 // List all run log files for an instance
