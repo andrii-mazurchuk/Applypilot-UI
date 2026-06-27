@@ -193,8 +193,10 @@ export function listPdfs(instance: InstanceConfig): PdfFile[] {
   return results.sort((a, b) => a.filename.localeCompare(b.filename));
 }
 
-export function getCrossInstanceApplied(): { total: number; byInstance: Array<{ instance: string; count: number }> } {
-  const dbPath = join(homedir(), ".applypilot", "applied.db");
+export function getCrossInstanceApplied(userDir?: string): { total: number; byInstance: Array<{ instance: string; count: number }> } {
+  const dbPath = userDir
+    ? join(userDir, "applied.db")
+    : join(homedir(), ".applypilot", "applied.db");
   if (!existsSync(dbPath)) return { total: 0, byInstance: [] };
   const db = new Database(dbPath, { readonly: true });
   try {

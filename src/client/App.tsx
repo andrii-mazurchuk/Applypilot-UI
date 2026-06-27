@@ -15,6 +15,11 @@ export default function App() {
   const [panel, setPanel] = useState<Panel | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [username, setUsername] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/me").then((r) => r.json()).then((d) => setUsername(d.username ?? null)).catch(() => {});
+  }, []);
 
   const fetchInstances = () => {
     fetch("/api/instances")
@@ -100,7 +105,7 @@ export default function App() {
       <header className="border-b border-zinc-800 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-white font-bold text-lg tracking-tight">ApplyPilot</span>
-          <span className="text-zinc-600 text-sm">dashboard</span>
+          <span className="text-zinc-600 text-sm">{username ? username : "dashboard"}</span>
         </div>
         <div className="flex items-center gap-4">
           {totalApplied > 0 && (

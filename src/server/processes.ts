@@ -24,11 +24,11 @@ interface ProcessState {
   subscribers: Set<(line: string) => void>;
 }
 
-const SHARED_DIR = join(homedir(), ".applypilot");
-
-// Venv where applypilot is installed — prepended to PATH so the binary is always found
-// regardless of how the Bun server was started.
 const VENV_BIN = join(homedir(), ".applypilot", "venv", "bin");
+
+function userSharedDir(userId: string): string {
+  return join(homedir(), ".applypilot", "users", userId);
+}
 
 const processes = new Map<string, ProcessState>();
 
@@ -119,15 +119,20 @@ function startLogTail(logFile: string, state: ProcessState): () => void {
   };
 }
 
+function processKey(userId: string, instanceName: string): string {
+  return `${userId}:${instanceName}`;
+}
+
 /** Called at server startup — restores state for any instance whose process survived a crash. */
-export function restoreFromDisk(instances: InstanceConfig[]) {
+export function restoreFromDisk(userId: string, instances: InstanceConfig[]) {
   for (const inst of instances) {
     const pf = pidFile(inst.dir);
     if (!existsSync(pf)) continue;
     try {
       const pid = parseInt(readFileSync(pf, "utf-8").trim(), 10);
+      const key = processKey(userId, inst.name);
       if (!isNaN(pid) && isAlive(pid)) {
-        const state = getOrCreate(inst.name);
+        const state = getOrCreate(key);
         state.pid = pid;
         state.status = "running";
         state.startedAt = state.startedAt ?? new Date().toISOString();
@@ -137,7 +142,6 @@ export function restoreFromDisk(instances: InstanceConfig[]) {
           const lines = readFileSync(lf, "utf-8").split("\n").filter(Boolean);
           state.logs = lines;
           emit(state, "[system] Server restarted — process still running, log restored");
-          // Resume tailing the live log file
           startLogTail(lf, state);
         }
       } else {
@@ -147,8 +151,9 @@ export function restoreFromDisk(instances: InstanceConfig[]) {
   }
 }
 
-export function startProcess(instance: InstanceConfig, mode: RunMode): { ok: boolean; error?: string } {
-  const state = getOrCreate(instance.name);
+export function startProcess(userId: string, instance: InstanceConfig, mode: RunMode): { ok: boolean; error?: string } {
+  const key = processKey(userId, instance.name);
+  const state = getOrCreate(key);
   if (state.status === "running") return { ok: false, error: "Already running" };
 
   const logsDir = join(instance.dir, "logs");
@@ -175,7 +180,7 @@ export function startProcess(instance: InstanceConfig, mode: RunMode): { ok: boo
     ...inheritedEnv,
     PATH: `${VENV_BIN}:${process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin"}`,
     APPLYPILOT_DIR: instance.dir,
-    APPLYPILOT_SHARED_DIR: SHARED_DIR,
+    APPLYPILOT_SHARED_DIR: userSharedDir(userId),
     APPLYPILOT_ENV_FILE: join(instance.dir, ".env"),
     APPLYPILOT_LOG_FILE: lf,
     PYTHONIOENCODING: "utf-8",
@@ -253,8 +258,9 @@ function killProcessGroup(pid: number, signal: NodeJS.Signals) {
   }
 }
 
-export function stopProcess(name: string): { ok: boolean; error?: string } {
-  const state = processes.get(name);
+export function stopProcess(userId: string, name: string): { ok: boolean; error?: string } {
+  const key = processKey(userId, name);
+  const state = processes.get(key);
   if (!state || state.status !== "running") return { ok: false, error: "No running process" };
 
   const pid = state.pid;
@@ -305,8 +311,8 @@ export async function shutdownAll(gracePeriodMs = 10_000): Promise<void> {
   }
 }
 
-export function getStatus(name: string) {
-  const s = getOrCreate(name);
+export function getStatus(userId: string, name: string) {
+  const s = getOrCreate(processKey(userId, name));
   return {
     status: s.status,
     mode: s.mode,
@@ -318,14 +324,14 @@ export function getStatus(name: string) {
   };
 }
 
-export function subscribe(name: string, cb: (line: string) => void): () => void {
-  const state = getOrCreate(name);
+export function subscribe(userId: string, name: string, cb: (line: string) => void): () => void {
+  const state = getOrCreate(processKey(userId, name));
   state.subscribers.add(cb);
   return () => state.subscribers.delete(cb);
 }
 
-export function getLogs(name: string): string[] {
-  return getOrCreate(name).logs;
+export function getLogs(userId: string, name: string): string[] {
+  return getOrCreate(processKey(userId, name)).logs;
 }
 
 export { newestLogFile };

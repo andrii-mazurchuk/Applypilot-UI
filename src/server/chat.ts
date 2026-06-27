@@ -8,9 +8,9 @@ import type { ScoredJob } from "./stats.js";
 
 // ── API key ────────────────────────────────────────────────────────────────────
 
-function getChatOpenAIKey(): string {
+function getChatOpenAIKey(userDir: string): string {
   if (process.env.CHAT_OPENAI_API_KEY) return process.env.CHAT_OPENAI_API_KEY;
-  const envPath = join(homedir(), ".applypilot", ".env");
+  const envPath = join(userDir, ".env");
   if (existsSync(envPath)) {
     const match = readFileSync(envPath, "utf-8").match(/^CHAT_OPENAI_API_KEY\s*=\s*(.+)$/m);
     if (match) return match[1].trim().replace(/^["']|["']$/g, "");
@@ -78,6 +78,7 @@ export interface ChatMessage {
 
 export async function streamChatResponse(
   instance: InstanceConfig,
+  userDir: string,
   jobUrl: string,
   messages: ChatMessage[],
   onChunk: (text: string) => void,
@@ -90,8 +91,8 @@ export async function streamChatResponse(
     resumeText = readFileSync(job.tailored_resume_path, "utf-8");
   }
 
-  const apiKey = getChatOpenAIKey();
-  if (!apiKey) throw new Error("CHAT_OPENAI_API_KEY not set in ~/.applypilot/.env");
+  const apiKey = getChatOpenAIKey(userDir);
+  if (!apiKey) throw new Error("CHAT_OPENAI_API_KEY not set in user .env");
 
   const openAiMessages = [
     { role: "system", content: buildSystemPrompt(job, resumeText) },

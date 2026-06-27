@@ -2,24 +2,45 @@ import { Hono } from "hono";
 import { stream } from "hono/streaming";
 import { existsSync, readdirSync, statSync, createReadStream } from "fs";
 import { join } from "path";
-import { loadManifest } from "./manifest.js";
+import type { Context } from "hono";
+import { loadManifest, userDataDir } from "./manifest.js";
 import { getStats, getAppliedJobs, getCrossInstanceApplied, getScoredJobs, getJob, updateJobStatus, listPdfs } from "./stats.js";
 import { streamChatResponse, saveResumeAndRegen } from "./chat.js";
 import type { ChatMessage } from "./chat.js";
 import { startProcess, stopProcess, getStatus, subscribe, getLogs } from "./processes.js";
 import type { RunMode } from "./processes.js";
 
+function requireUser(c: Context): string | Response {
+  const header = c.req.header("X-authentik-username");
+  if (header) return header;
+  if (process.env.NODE_ENV === "development" || !process.env.NODE_ENV) {
+    return process.env.APPLYPILOT_DEV_USER ?? "andrey";
+  }
+  return c.json({ error: "Unauthorized" }, 401) as unknown as Response;
+}
+
 const api = new Hono();
 
+api.get("/me", (c) => {
+  const userId = c.req.header("X-authentik-username") ?? null;
+  const devUser = (!process.env.NODE_ENV || process.env.NODE_ENV === "development")
+    ? (process.env.APPLYPILOT_DEV_USER ?? "andrey")
+    : null;
+  return c.json({ username: userId ?? devUser });
+});
+
 api.get("/instances", (c) => {
+  const userId = requireUser(c);
+  if (userId instanceof Response) return userId;
   try {
-    const instances = loadManifest();
+    const instances = loadManifest(userId);
+    const userDir = userDataDir(userId);
     const result = instances.map((instance) => ({
       instance,
       stats: getStats(instance),
-      process: getStatus(instance.name),
+      process: getStatus(userId, instance.name),
     }));
-    return c.json({ instances: result, crossInstance: getCrossInstanceApplied() });
+    return c.json({ instances: result, crossInstance: getCrossInstanceApplied(userDir) });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[/api/instances]", msg);
@@ -28,51 +49,63 @@ api.get("/instances", (c) => {
 });
 
 api.get("/instances/:name/jobs", (c) => {
+  const userId = requireUser(c);
+  if (userId instanceof Response) return userId;
   const { name } = c.req.param();
-  const instances = loadManifest();
+  const instances = loadManifest(userId);
   const instance = instances.find((i) => i.name === name);
   if (!instance) return c.json({ error: "Instance not found" }, 404);
   return c.json(getAppliedJobs(instance));
 });
 
 api.get("/instances/:name/status", (c) => {
+  const userId = requireUser(c);
+  if (userId instanceof Response) return userId;
   const { name } = c.req.param();
-  return c.json(getStatus(name));
+  return c.json(getStatus(userId, name));
 });
 
 api.post("/instances/:name/start", async (c) => {
+  const userId = requireUser(c);
+  if (userId instanceof Response) return userId;
   const { name } = c.req.param();
-  const instances = loadManifest();
+  const instances = loadManifest(userId);
   const instance = instances.find((i) => i.name === name);
   if (!instance) return c.json({ error: "Instance not found" }, 404);
 
   const body = await c.req.json().catch(() => ({}));
   const mode: RunMode = body.mode === "apply" ? "apply" : "run";
 
-  const result = startProcess(instance, mode);
+  const result = startProcess(userId, instance, mode);
   if (!result.ok) return c.json({ error: result.error }, 409);
   return c.json({ ok: true, mode });
 });
 
 api.post("/instances/:name/stop", (c) => {
+  const userId = requireUser(c);
+  if (userId instanceof Response) return userId;
   const { name } = c.req.param();
-  const result = stopProcess(name);
+  const result = stopProcess(userId, name);
   if (!result.ok) return c.json({ error: result.error }, 409);
   return c.json({ ok: true });
 });
 
 api.get("/instances/:name/scored-jobs", (c) => {
+  const userId = requireUser(c);
+  if (userId instanceof Response) return userId;
   const { name } = c.req.param();
-  const instances = loadManifest();
+  const instances = loadManifest(userId);
   const instance = instances.find((i) => i.name === name);
   if (!instance) return c.json({ error: "Instance not found" }, 404);
   return c.json(getScoredJobs(instance));
 });
 
 api.get("/instances/:name/scored-jobs/:url", (c) => {
+  const userId = requireUser(c);
+  if (userId instanceof Response) return userId;
   const { name } = c.req.param();
   const url = decodeURIComponent(c.req.param("url"));
-  const instances = loadManifest();
+  const instances = loadManifest(userId);
   const instance = instances.find((i) => i.name === name);
   if (!instance) return c.json({ error: "Instance not found" }, 404);
   const job = getJob(instance, url);
@@ -81,8 +114,10 @@ api.get("/instances/:name/scored-jobs/:url", (c) => {
 });
 
 api.patch("/instances/:name/scored-jobs", async (c) => {
+  const userId = requireUser(c);
+  if (userId instanceof Response) return userId;
   const { name } = c.req.param();
-  const instances = loadManifest();
+  const instances = loadManifest(userId);
   const instance = instances.find((i) => i.name === name);
   if (!instance) return c.json({ error: "Instance not found" }, 404);
 
@@ -97,8 +132,10 @@ api.patch("/instances/:name/scored-jobs", async (c) => {
 });
 
 api.get("/instances/:name/pdfs", (c) => {
+  const userId = requireUser(c);
+  if (userId instanceof Response) return userId;
   const { name } = c.req.param();
-  const instances = loadManifest();
+  const instances = loadManifest(userId);
   const instance = instances.find((i) => i.name === name);
   if (!instance) return c.json({ error: "Instance not found" }, 404);
 
@@ -131,14 +168,15 @@ api.get("/instances/:name/pdfs", (c) => {
   return c.json(listPdfs(instance));
 });
 
-// Chat: stream a Gemini response with job + resume context
 api.post("/instances/:name/jobs/chat", async (c) => {
+  const userId = requireUser(c);
+  if (userId instanceof Response) return userId;
   const { name } = c.req.param();
   const body = await c.req.json().catch(() => null) as { jobUrl?: string; messages?: ChatMessage[] } | null;
   if (!body?.jobUrl || !Array.isArray(body?.messages)) {
     return c.json({ error: "jobUrl and messages required" }, 400);
   }
-  const instances = loadManifest();
+  const instances = loadManifest(userId);
   const instance = instances.find((i) => i.name === name);
   if (!instance) return c.json({ error: "Instance not found" }, 404);
 
@@ -150,7 +188,7 @@ api.post("/instances/:name/jobs/chat", async (c) => {
     let closed = false;
     s.onAbort(() => { closed = true; });
     try {
-      await streamChatResponse(instance, body.jobUrl!, body.messages!, (chunk) => {
+      await streamChatResponse(instance, userDataDir(userId), body.jobUrl!, body.messages!, (chunk) => {
         if (!closed) s.write(`data: ${JSON.stringify(chunk)}\n\n`).catch(() => { closed = true; });
       });
       if (!closed) await s.write(`data: [DONE]\n\n`);
@@ -161,12 +199,13 @@ api.post("/instances/:name/jobs/chat", async (c) => {
   });
 });
 
-// Save edited resume text and regenerate PDF
 api.post("/instances/:name/jobs/save-resume", async (c) => {
+  const userId = requireUser(c);
+  if (userId instanceof Response) return userId;
   const { name } = c.req.param();
   const body = await c.req.json().catch(() => null) as { jobUrl?: string; content?: string } | null;
   if (!body?.jobUrl || !body?.content) return c.json({ error: "jobUrl and content required" }, 400);
-  const instances = loadManifest();
+  const instances = loadManifest(userId);
   const instance = instances.find((i) => i.name === name);
   if (!instance) return c.json({ error: "Instance not found" }, 404);
   try {
@@ -178,10 +217,11 @@ api.post("/instances/:name/jobs/save-resume", async (c) => {
   }
 });
 
-// List all run log files for an instance
 api.get("/instances/:name/logs", (c) => {
+  const userId = requireUser(c);
+  if (userId instanceof Response) return userId;
   const { name } = c.req.param();
-  const instances = loadManifest();
+  const instances = loadManifest(userId);
   const instance = instances.find((i) => i.name === name);
   if (!instance) return c.json({ error: "Instance not found" }, 404);
 
@@ -192,7 +232,6 @@ api.get("/instances/:name/logs", (c) => {
     .filter((f) => /^run_.*\.log$/.test(f))
     .map((filename) => {
       const stat = statSync(join(logsDir, filename));
-      // Derive ISO timestamp from filename: run_2026-06-19T00-30-00.log → 2026-06-19T00:30:00Z
       const ts = filename.replace("run_", "").replace(".log", "").replace(/-(\d{2})-(\d{2})-(\d{2})$/, "T$1:$2:$3");
       return { filename, startedAt: ts, size: stat.size, mtimeMs: stat.mtimeMs };
     })
@@ -202,16 +241,16 @@ api.get("/instances/:name/logs", (c) => {
   return c.json(runs);
 });
 
-// Serve a full log file by filename
 api.get("/instances/:name/logs/:filename", (c) => {
+  const userId = requireUser(c);
+  if (userId instanceof Response) return userId;
   const { name, filename } = c.req.param();
 
-  // Guard against path traversal — only allow run_*.log filenames
   if (!/^run_[^/\\]+\.log$/.test(filename)) {
     return c.json({ error: "Invalid filename" }, 400);
   }
 
-  const instances = loadManifest();
+  const instances = loadManifest(userId);
   const instance = instances.find((i) => i.name === name);
   if (!instance) return c.json({ error: "Instance not found" }, 404);
 
@@ -231,8 +270,9 @@ api.get("/instances/:name/logs/:filename", (c) => {
   });
 });
 
-// SSE log stream
 api.get("/instances/:name/logs/stream", (c) => {
+  const userId = requireUser(c);
+  if (userId instanceof Response) return userId;
   const { name } = c.req.param();
 
   c.header("Content-Type", "text/event-stream");
@@ -244,19 +284,16 @@ api.get("/instances/:name/logs/stream", (c) => {
 
     const writeSSE = (line: string): boolean => {
       if (closed) return false;
-      // fire-and-forget — errors caught to prevent unhandled rejections
       s.write(`data: ${JSON.stringify(line)}\n\n`).catch(() => { closed = true; });
       return true;
     };
 
-    // Flush buffered logs
-    for (const line of getLogs(name)) {
+    for (const line of getLogs(userId, name)) {
       if (!writeSSE(line)) return;
     }
 
-    // Stream new lines
     await new Promise<void>((resolve) => {
-      const unsub = subscribe(name, (line) => {
+      const unsub = subscribe(userId, name, (line) => {
         if (!writeSSE(line)) { unsub(); resolve(); }
       });
       s.onAbort(() => { closed = true; unsub(); resolve(); });
