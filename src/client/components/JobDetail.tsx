@@ -119,7 +119,7 @@ function ChatPanel({
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streaming]);
+  }, [messages]);
 
   const sendMessage = async () => {
     const text = input.trim();
@@ -203,7 +203,7 @@ function ChatPanel({
   };
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col">
+    <div className="flex flex-col h-full">
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 && (
@@ -460,72 +460,61 @@ export default function JobDetail({ instanceName, instanceLabel, jobUrl, onBack,
             )}
           </div>
 
-          {/* ── Right: document (top) + chat (bottom) ───────────────────────── */}
-          <div className="flex-1 flex flex-col overflow-hidden">
-
-            {/* Document pane — top 60% */}
-            <div className="flex-[3] min-h-0 flex flex-col border-b border-zinc-800">
-              {/* Doc header */}
-              <div className="flex-shrink-0 flex items-center gap-2 px-4 py-2 border-b border-zinc-800 bg-zinc-900/50">
-                <span className="text-zinc-500 text-xs uppercase tracking-wide font-medium">Document</span>
-                {hasDocs && (
-                  <div className="flex gap-1 ml-2">
-                    {resumeUrl && (
-                      <button
-                        onClick={() => setActiveDoc("resume")}
-                        className={`px-2.5 py-1 rounded text-xs transition-colors ${activeDoc === "resume" ? "bg-zinc-700 text-zinc-100" : "text-zinc-600 hover:text-zinc-300"}`}
-                      >
-                        Resume
-                      </button>
-                    )}
-                    {coverUrl && (
-                      <button
-                        onClick={() => setActiveDoc("cover")}
-                        className={`px-2.5 py-1 rounded text-xs transition-colors ${activeDoc === "cover" ? "bg-zinc-700 text-zinc-100" : "text-zinc-600 hover:text-zinc-300"}`}
-                      >
-                        Cover Letter
-                      </button>
-                    )}
-                  </div>
-                )}
-                <div className="ml-auto flex items-center gap-3">
-                  <button
-                    onClick={() => setPdfBust(Date.now())}
-                    className="text-xs text-zinc-700 hover:text-zinc-400 transition-colors"
-                    title="Reload PDF after AI regeneration"
-                  >
-                    ↺ reload
-                  </button>
-                  {activePdfUrl && (
-                    <a href={activePdfUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 text-xs">
-                      Open ↗
-                    </a>
+          {/* ── Middle: PDF viewer ──────────────────────────────────────────── */}
+          <div className="flex-1 flex flex-col overflow-hidden border-r border-zinc-800">
+            <div className="flex items-center gap-1 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/50 flex-shrink-0">
+              {hasDocs && (
+                <>
+                  {resumeUrl && (
+                    <button
+                      onClick={() => setActiveDoc("resume")}
+                      className={`px-3 py-1.5 rounded text-sm transition-colors ${activeDoc === "resume" ? "bg-zinc-700 text-white" : "text-zinc-500 hover:text-zinc-300"}`}
+                    >
+                      Resume
+                    </button>
                   )}
-                </div>
-              </div>
-              {/* PDF viewer */}
-              <div className="flex-1 min-h-0">
-                {activePdfUrl ? (
-                  <iframe src={activePdfUrl} className="w-full h-full border-0 bg-zinc-900" title={activeDoc === "resume" ? "Resume" : "Cover Letter"} />
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-full text-zinc-600 gap-2">
-                    <p className="text-sm">No documents generated yet</p>
-                    <p className="text-xs text-zinc-700">Run tailor + cover stages first</p>
-                  </div>
-                )}
-              </div>
+                  {coverUrl && (
+                    <button
+                      onClick={() => setActiveDoc("cover")}
+                      className={`px-3 py-1.5 rounded text-sm transition-colors ${activeDoc === "cover" ? "bg-zinc-700 text-white" : "text-zinc-500 hover:text-zinc-300"}`}
+                    >
+                      Cover Letter
+                    </button>
+                  )}
+                </>
+              )}
+              <button
+                onClick={() => setPdfBust(Date.now())}
+                className="ml-auto text-xs text-zinc-700 hover:text-zinc-400 transition-colors"
+                title="Reload PDF after regeneration"
+              >
+                ↺ reload
+              </button>
             </div>
+            <div className="flex-1 overflow-hidden">
+              {hasDocs && activePdfUrl ? (
+                <PdfPane
+                  title={activeDoc === "resume" ? "Tailored Resume" : "Cover Letter"}
+                  url={activePdfUrl}
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-zinc-600 gap-2">
+                  <p className="text-sm">No documents generated yet</p>
+                  <p className="text-xs text-zinc-700">Run tailor + cover stages to generate PDFs</p>
+                </div>
+              )}
+            </div>
+          </div>
 
-            {/* Chat pane — bottom 40% */}
-            <div className="flex-[2] min-h-0 flex flex-col">
-              {/* Chat header */}
-              <div className="flex-shrink-0 flex items-center gap-2 px-4 py-2 border-b border-zinc-800 bg-zinc-900/50">
-                <span className="text-zinc-500 text-xs uppercase tracking-wide font-medium">Refine CV</span>
-                <span className="text-[10px] text-blue-400 font-medium">✦ AI</span>
-              </div>
+          {/* ── Right: chat ─────────────────────────────────────────────────── */}
+          <div className="w-[380px] flex-shrink-0 flex flex-col overflow-hidden border-l border-zinc-800">
+            <div className="px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/50 flex-shrink-0 flex items-center gap-2">
+              <span className="text-zinc-300 text-sm font-medium">Refine CV</span>
+              <span className="text-[10px] text-blue-400 font-medium">✦ AI</span>
+            </div>
+            <div className="flex-1 overflow-hidden flex flex-col">
               <ChatPanel instanceName={instanceName} jobUrl={jobUrl} />
             </div>
-
           </div>
 
         </div>
